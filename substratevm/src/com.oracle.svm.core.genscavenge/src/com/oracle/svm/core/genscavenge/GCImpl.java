@@ -746,6 +746,7 @@ public final class GCImpl implements GC {
     private void blackenStackRoots() {
         Timer blackenStackRootsTimer = timers.blackenStackRoots.open();
         try {
+            RuntimeCodeInfoAccess.enableJitWriteProtect(false);
             Pointer sp = readCallerStackPointer();
             CodePointer ip = readReturnAddress();
 
@@ -775,6 +776,7 @@ public final class GCImpl implements GC {
             }
         } finally {
             blackenStackRootsTimer.close();
+            RuntimeCodeInfoAccess.enableJitWriteProtect(true);
         }
     }
 

@@ -204,7 +204,12 @@ public class RuntimeCodeInfoMemory {
             for (int i = 0; i < length;) {
                 UntetheredCodeInfo info = NonmovableArrays.getWord(table, i);
                 if (info.isNonNull()) {
-                    visitor.visitCode(CodeInfoAccess.convert(info));
+                    try {
+                        RuntimeCodeInfoAccess.enableJitWriteProtect(false);
+                        visitor.visitCode(CodeInfoAccess.convert(info));
+                    } finally {
+                        RuntimeCodeInfoAccess.enableJitWriteProtect(true);
+                    }
                 }
 
                 // If the visitor removed the current entry from the table, then it is necessary to
@@ -225,7 +230,12 @@ public class RuntimeCodeInfoMemory {
             for (int i = 0; i < length;) {
                 UntetheredCodeInfo info = NonmovableArrays.getWord(table, i);
                 if (info.isNonNull()) {
-                    visitor.visitCode(CodeInfoAccess.convert(info));
+                    try {
+                        RuntimeCodeInfoAccess.enableJitWriteProtect(false);
+                        visitor.visitCode(CodeInfoAccess.convert(info));
+                    } finally {
+                        RuntimeCodeInfoAccess.enableJitWriteProtect(true);
+                    }
                 }
                 assert info == NonmovableArrays.getWord(table, i);
             }

@@ -142,4 +142,5 @@ public interface CommittedMemoryProvider {
      * @return true on success, or false otherwise.
      */
     boolean protect(PointerBase start, UnsignedWord nbytes, EnumSet<Access> access);
+
 }
