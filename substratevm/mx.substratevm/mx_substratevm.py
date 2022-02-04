@@ -124,6 +124,13 @@ def is_musl_supported():
     return False
 
 
+def build_native_image_agent(native_image):
+    agentfile = mx_subst.path_substitutions.substitute('<lib:native-image-agent>')
+    agentname = agentfile.rsplit('.', 1)[0]  # remove platform-specific file extension
+    native_image(['--macro:native-image-agent-library', '-H:Name=' + agentname, '-H:Path=' + svmbuild_dir()])
+    return svmbuild_dir() + '/' + agentfile
+
+
 class GraalVMConfig(collections.namedtuple('GraalVMConfig', 'primary_suite_dir, dynamicimports, disable_libpolyglot, force_bash_launchers, skip_libraries, exclude_components, native_images')):
     @classmethod
     def build(cls, primary_suite_dir=None, dynamicimports=None, disable_libpolyglot=True, force_bash_launchers=True, skip_libraries=True,
@@ -217,7 +224,8 @@ GraalTags = Tags([
     'benchmarktest',
     "nativeimagehelp",
     'muslcbuild',
-    'hellomodule'
+    'hellomodule',
+    'condconfig',
 ])
 
 
@@ -347,6 +355,11 @@ def svm_gate_body(args, tasks):
             with native_image_context(IMAGE_ASSERTION_FLAGS) as native_image:
                 native_unittests_task()
 
+    with Task('conditional configuration tests', tasks, tags=[GraalTags.condconfig]) as t:
+        if t:
+            with native_image_context(IMAGE_ASSERTION_FLAGS) as native_image:
+                conditional_config_task(native_image)
+
     with Task('Run Truffle unittests with SVM image', tasks, tags=["svmjunit"]) as t:
         if t:
             truffle_args = ['--build-args', '--macro:truffle',
@@ -415,6 +428,7 @@ def svm_gate_body(args, tasks):
 
 
 def native_unittests_task():
+    tests = ['com.oracle.svm.test', 'com.oracle.svm.configure.test.config']
     if mx.is_windows():
         # GR-24075
         mx_unittest.add_global_ignore_glob('com.oracle.svm.test.ProcessPropertiesTest')
@@ -428,7 +442,20 @@ def native_unittests_task():
         if mx.is_windows():
             mx_unittest.add_global_ignore_glob('com.oracle.svm.test.SecurityServiceTest')
 
-    native_unittest(['--builder-on-modulepath', '--build-args', _native_unittest_features] + additional_build_args)
+    native_unittest(['--builder-on-modulepath', '--build-args', _native_unittest_features] + additional_build_args + tests)
+
+
+def conditional_config_task(native_image):
+    agent_path = build_native_image_agent(native_image)
+    config_dir = join(svmbuild_dir(), 'cond-config-test-config')
+    if exists(config_dir):
+        mx.rmtree(config_dir)
+    agent_opts = ['config-output-dir=' + config_dir, 'experimental-conditional-configuration=com.oracle.svm.configure.test.conditionalconfig']
+    jvm_unittest(['-agentpath:' + agent_path + '=' + ','.join(agent_opts)]
+                 + ['com.oracle.svm.configure.test.conditionalconfig.ConfigurationGenerator'])
+
+    jvm_unittest(['-Dcom.oracle.svm.configure.test.conditionalconfig.ConfigurationVerifier.configpath=' + config_dir]
+                + ['com.oracle.svm.configure.test.conditionalconfig.ConfigurationVerifier'])
 
 
 def javac_image_command(javac_path):
@@ -520,12 +547,16 @@ def _native_unittest(native_image, cmdline_args):
         except IOError:
             mx.log('warning: could not read blacklist: ' + blacklist)
 
-    unittest_args = unmask(pargs.unittest_args) if unmask(pargs.unittest_args) else ['com.oracle.svm.test', 'com.oracle.svm.configure.test']
+    unittest_args = unmask(pargs.unittest_args) if unmask(pargs.unittest_args) else ['com.oracle.svm.test']
     builder_on_modulepath = pargs.builder_on_modulepath
     if builder_on_modulepath and svm_java8():
         mx.log('On Java 8, unittests cannot be built with imagebuilder on module-path. Reverting to imagebuilder on classpath.')
         builder_on_modulepath = False
     _native_junit(native_image, unittest_args, unmask(pargs.build_args), unmask(pargs.run_args), blacklist, whitelist, pargs.preserve_image, builder_on_modulepath)
+
+
+def jvm_unittest(args):
+    return mx_unittest.unittest(['--suite', 'substratevm'] + args)
 
 
 def js_image_test(jslib, bench_location, name, warmup_iterations, iterations, timeout=None, bin_args=None):
